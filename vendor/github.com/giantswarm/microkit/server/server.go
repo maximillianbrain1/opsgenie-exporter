@@ -7,13 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	_ "net/http/pprof"
+	_ "net/http/pprof" //nolint:gosec
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	kitendpoint "github.com/go-kit/kit/endpoint"
 	kithttp "github.com/go-kit/kit/transport/http"
@@ -21,7 +22,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/viper"
 
-	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/microkit/tls"
 )
 
@@ -420,11 +420,14 @@ func (s *server) newErrorEncoderWrapper() kithttp.ErrorEncoder {
 		// Write the actual response body in case no response was already written
 		// inside the error encoder.
 		if !rw.HasWritten() {
-			json.NewEncoder(rw).Encode(map[string]interface{}{
+			err := json.NewEncoder(rw).Encode(map[string]interface{}{
 				"code":  responseError.Code(),
 				"error": responseError.Message(),
 				"from":  s.serviceName,
 			})
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 }
@@ -454,11 +457,14 @@ func (s *server) newNotFoundHandler() http.Handler {
 		// Write the actual response body.
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"code":  CodeResourceNotFound,
 			"error": errMessage,
 			"from":  s.serviceName,
 		})
+		if err != nil {
+			panic(err)
+		}
 	}))
 }
 
