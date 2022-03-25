@@ -2,7 +2,6 @@ package integration
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/giantswarm/microerror"
 	"github.com/opsgenie/opsgenie-go-sdk-v2/client"

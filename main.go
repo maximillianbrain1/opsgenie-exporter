@@ -9,7 +9,6 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/giantswarm/opsgenie-exporter/alert"
 	"github.com/giantswarm/opsgenie-exporter/integration"
-	"github.com/giantswarm/opsgenie-exporter/opsgenie"
 	"github.com/opsgenie/opsgenie-go-sdk-v2/client"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -30,22 +29,14 @@ func main() {
 		}
 	}
 
-	var opsgenieClient *opsgenie.Client
-	{
-		c := opsgenie.Config{
-			Key: *opsgenieAPIKey,
-		}
-
-		opsgenieClient, err = opsgenie.New(c)
-		if err != nil {
-			panic(fmt.Sprintf("%#v\n", err))
-		}
-	}
-
 	var alertCollector collector.Interface
 	{
+		opsgenieConfig := client.Config{
+			ApiKey: *opsgenieAPIKey,
+		}
+
 		c := alert.Config{
-			Client: opsgenieClient,
+			Config: &opsgenieConfig,
 		}
 
 		alertCollector, err = alert.New(c)
