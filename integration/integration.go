@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/giantswarm/microerror"
 	"github.com/opsgenie/opsgenie-go-sdk-v2/client"
@@ -144,14 +145,17 @@ func (i *Integration) Collect(ch chan<- prometheus.Metric) error {
 				return microerror.Mask(err)
 			}
 
-			ch <- prometheus.MustNewConstMetric(
-				suppressedIntegration,
-				prometheus.GaugeValue,
-				float64(booleanToInteger(res.Data["suppressNotifications"].(bool))),
-				id,
-				res.Data["name"].(string),
-				res.Data["type"].(string),
-			)
+			// some integrations do not support suppression or report this field
+			if res.Data["suppressNotifications"] != nil {
+				ch <- prometheus.MustNewConstMetric(
+					suppressedIntegration,
+					prometheus.GaugeValue,
+					float64(booleanToInteger(res.Data["suppressNotifications"].(bool))),
+					id,
+					res.Data["name"].(string),
+					res.Data["type"].(string),
+				)
+			}
 		}
 
 		return nil
