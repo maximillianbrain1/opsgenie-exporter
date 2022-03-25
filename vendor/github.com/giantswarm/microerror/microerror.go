@@ -47,12 +47,13 @@ func Mask(err error) error {
 }
 
 func mask(err error) error {
-	_, file, line, _ := runtime.Caller(2)
+	pc, file, line, _ := runtime.Caller(2)
 
 	return &stackedError{
 		stackEntry: StackEntry{
 			File: file,
 			Line: line,
+			PC:   pc,
 		},
 		underlying: err,
 	}

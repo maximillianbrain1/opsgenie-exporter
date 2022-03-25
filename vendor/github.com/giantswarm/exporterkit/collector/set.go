@@ -69,9 +69,28 @@ func (s *Set) Boot(ctx context.Context) error {
 	return nil
 }
 
-func (s *Set) Collect(ch chan<- prometheus.Metric) {
-	s.logger.Log("level", "debug", "message", "collecting metrics")
+func (s *Set) Stop(ctx context.Context) {
+	s.logger.Log("level", "debug", "message", "stopping collector")
 
+	if !s.isBooted() {
+		return
+	}
+
+	{
+		s.logger.LogCtx(ctx, "level", "debug", "message", "unregistering collector")
+
+		registered := prometheus.Unregister(s)
+		if !registered {
+			s.logger.LogCtx(ctx, "level", "debug", "message", "collector was not registered")
+		} else {
+			s.logger.LogCtx(ctx, "level", "debug", "message", "unregistered collector")
+		}
+	}
+
+	s.logger.LogCtx(ctx, "level", "debug", "message", "stopped collector")
+}
+
+func (s *Set) Collect(ch chan<- prometheus.Metric) {
 	var g errgroup.Group
 
 	for _, item := range s.collectors {
@@ -91,8 +110,6 @@ func (s *Set) Collect(ch chan<- prometheus.Metric) {
 	if err != nil {
 		s.logger.Log("level", "error", "message", "failed collecting metrics", "stack", fmt.Sprintf("%#v", microerror.Mask(err)))
 	}
-
-	s.logger.Log("level", "debug", "message", "collected metrics")
 }
 
 func (s *Set) Describe(ch chan<- *prometheus.Desc) {

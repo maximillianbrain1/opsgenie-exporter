@@ -2,6 +2,7 @@ package micrologger
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/giantswarm/microerror"
@@ -75,12 +76,32 @@ func NewActivation(config ActivationLoggerConfig) (Logger, error) {
 	}
 
 	l := &activationLogger{
-		underlying: config.Underlying,
+		underlying: config.Underlying.WithIncreasedCallerDepth(),
 
 		activations: config.Activations,
 	}
 
 	return l, nil
+}
+
+func (l *activationLogger) Debug(ctx context.Context, message string) {
+	l.LogCtx(ctx, "level", "debug", "message", message)
+}
+
+func (l *activationLogger) Debugf(ctx context.Context, format string, params ...interface{}) {
+	l.Debug(ctx, fmt.Sprintf(format, params...))
+}
+
+func (l *activationLogger) Error(ctx context.Context, err error, message string) {
+	if err != nil {
+		l.LogCtx(ctx, "level", "error", "message", message, "stack", microerror.JSON(err))
+	} else {
+		l.LogCtx(ctx, "level", "error", "message", message)
+	}
+}
+
+func (l *activationLogger) Errorf(ctx context.Context, err error, format string, params ...interface{}) {
+	l.Error(ctx, err, fmt.Sprintf(format, params...))
 }
 
 func (l *activationLogger) Log(keyVals ...interface{}) {
@@ -107,6 +128,10 @@ func (l *activationLogger) LogCtx(ctx context.Context, keyVals ...interface{}) {
 
 func (l *activationLogger) With(keyVals ...interface{}) Logger {
 	return l.underlying.With(keyVals...)
+}
+
+func (l *activationLogger) WithIncreasedCallerDepth() Logger {
+	return l.underlying.WithIncreasedCallerDepth()
 }
 
 func valueFor(keyVals []interface{}, key string) (interface{}, bool) {
@@ -146,7 +171,7 @@ func isLevelAllowed(keyVals []interface{}, aVal interface{}) bool {
 			continue
 		}
 
-		return activationLevel >= keyValsLevel
+		return activationLevel <= keyValsLevel
 	}
 
 	return false
@@ -174,7 +199,7 @@ func isVerbosityAllowed(keyVals []interface{}, aVal interface{}) bool {
 		return activationVerbosity >= keyValsVerbosity
 	}
 
-	return false
+	return true
 }
 
 func shouldActivate(activations map[string]interface{}, keyVals []interface{}) (bool, error) {

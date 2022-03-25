@@ -4,10 +4,13 @@ package micrologger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 
-	kitlog "github.com/go-kit/kit/log"
+	"github.com/giantswarm/microerror"
+	kitlog "github.com/go-kit/log"
+	"github.com/go-logr/logr"
 
 	"github.com/giantswarm/micrologger/loggermeta"
 )
@@ -19,7 +22,10 @@ type Config struct {
 }
 
 type MicroLogger struct {
-	logger kitlog.Logger
+	info      logr.RuntimeInfo
+	logger    kitlog.Logger
+	verbosity int
+	names     []string
 }
 
 func New(config Config) (*MicroLogger, error) {
@@ -47,46 +53,98 @@ func New(config Config) (*MicroLogger, error) {
 	return l, nil
 }
 
-func (l *MicroLogger) Log(keyVals ...interface{}) {
-	keyVals = l.processStack(keyVals)
-	err := l.logger.Log(keyVals...)
-	if err != nil {
-		log.Printf("failed to log, reason: %#q", err.Error())
+func (l *MicroLogger) Debug(ctx context.Context, message string) {
+	kvs := []interface{}{
+		"level", "debug",
+		"message", message,
 	}
+
+	l.log(keyValsWithMeta(ctx, kvs))
+}
+
+func (l *MicroLogger) Debugf(ctx context.Context, format string, params ...interface{}) {
+	l.Debug(ctx, fmt.Sprintf(format, params...))
+}
+
+func (l *MicroLogger) Error(ctx context.Context, err error, message string) {
+	var kvs []interface{}
+	if err != nil {
+		kvs = []interface{}{
+			"level", "error",
+			"message", message,
+			"stack", microerror.JSON(err),
+		}
+	} else {
+		kvs = []interface{}{
+			"level", "error",
+			"message", message,
+		}
+	}
+
+	l.log(keyValsWithMeta(ctx, kvs))
+}
+
+func (l *MicroLogger) Errorf(ctx context.Context, err error, format string, params ...interface{}) {
+	l.Error(ctx, err, fmt.Sprintf(format, params...))
+}
+
+func (l *MicroLogger) Log(keyVals ...interface{}) {
+	l.log(processStack(keyVals))
 }
 
 func (l *MicroLogger) LogCtx(ctx context.Context, keyVals ...interface{}) {
-	keyVals = l.processStack(keyVals)
-	meta, ok := loggermeta.FromContext(ctx)
-	if !ok {
-		err := l.logger.Log(keyVals...)
-		if err != nil {
-			log.Printf("failed to log, reason: %#q", err.Error())
-		}
-		return
+	l.log(keyValsWithMeta(ctx, keyVals))
+}
+
+func (l *MicroLogger) deepCopy() *MicroLogger {
+	return &MicroLogger{
+		info:      l.info,
+		logger:    l.logger,
+		verbosity: l.verbosity,
+		names:     l.names[:],
 	}
-
-	var newKeyVals []interface{}
-	{
-		newKeyVals = append(newKeyVals, keyVals...)
-
-		for k, v := range meta.KeyVals {
-			newKeyVals = append(newKeyVals, k)
-			newKeyVals = append(newKeyVals, v)
-		}
-	}
-
-	l.logger.Log(newKeyVals...)
 }
 
 func (l *MicroLogger) With(keyVals ...interface{}) Logger {
-	keyVals = l.processStack(keyVals)
-	return &MicroLogger{
-		logger: kitlog.With(l.logger, keyVals...),
+	loggerCopy := l.deepCopy()
+	loggerCopy.logger = kitlog.With(loggerCopy.logger, keyVals...)
+	return loggerCopy
+}
+
+func (l *MicroLogger) log(keyVals []interface{}) {
+	err := l.logger.Log(keyVals...)
+	if err != nil {
+		log.Printf("failed to log with error: %#q, keyVals = %v", err.Error(), keyVals)
 	}
 }
 
-func (l *MicroLogger) processStack(keyVals []interface{}) []interface{} {
+func keyValsWithMeta(ctx context.Context, keyVals []interface{}) []interface{} {
+	keyVals = processStack(keyVals)
+	meta, ok := loggermeta.FromContext(ctx)
+	if !ok {
+		return keyVals
+	}
+
+	var kvs []interface{}
+	{
+		kvs = append(kvs, keyVals...)
+
+		for k, v := range meta.KeyVals {
+			kvs = append(kvs, k)
+			kvs = append(kvs, v)
+		}
+	}
+
+	return kvs
+}
+
+func (l *MicroLogger) WithIncreasedCallerDepth() Logger {
+	return &MicroLogger{
+		logger: kitlog.With(l.logger, "caller", newCallerFunc(1)),
+	}
+}
+
+func processStack(keyVals []interface{}) []interface{} {
 	for i := 1; i < len(keyVals); i += 2 {
 		k := keyVals[i-1]
 		v := keyVals[i]
@@ -125,4 +183,12 @@ func (l *MicroLogger) processStack(keyVals []interface{}) []interface{} {
 	}
 
 	return keyVals
+}
+
+func (l *MicroLogger) AsSink(verbosity int) logr.LogSink {
+	loggerCopy := l.deepCopy()
+	loggerCopy.verbosity = verbosity
+	return &LogrSink{
+		MicroLogger: loggerCopy,
+	}
 }

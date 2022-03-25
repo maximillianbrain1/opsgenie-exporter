@@ -36,8 +36,9 @@ type JSONError struct {
 }
 
 type StackEntry struct {
-	File string `json:"file"`
-	Line int    `json:"line"`
+	File string  `json:"file"`
+	Line int     `json:"line"`
+	PC   uintptr `json:"-"`
 }
 
 type annotatedError struct {
@@ -100,17 +101,7 @@ func (e *stackedError) Error() string {
 // all the fields to JSONError and finally marshals it using standard
 // json.Marshal call.
 func (e *stackedError) MarshalJSON() ([]byte, error) {
-	var stack = []StackEntry{
-		e.stackEntry,
-	}
-	{
-		underlying := e.underlying
-		var serr *stackedError
-		for errors.As(underlying, &serr) {
-			stack = append([]StackEntry{serr.stackEntry}, stack...)
-			underlying = serr.underlying
-		}
-	}
+	stack := createStackTrace(e)
 
 	var eerr *Error
 	var annotation string
@@ -142,6 +133,17 @@ func (e *stackedError) MarshalJSON() ([]byte, error) {
 	}
 
 	return bytes, nil
+}
+
+func (e *stackedError) StackTrace() []uintptr {
+	stack := createStackTrace(e)
+
+	var pcs []uintptr
+	for _, e := range stack {
+		pcs = append(pcs, e.PC)
+	}
+
+	return pcs
 }
 
 func (e *stackedError) Unwrap() error {
