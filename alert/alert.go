@@ -1,8 +1,11 @@
 package alert
 
 import (
+	"context"
+	"fmt"
 	"github.com/giantswarm/microerror"
-	"github.com/giantswarm/opsgenie-exporter/opsgenie"
+	"github.com/opsgenie/opsgenie-go-sdk-v2/alert"
+	"github.com/opsgenie/opsgenie-go-sdk-v2/client"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 )
@@ -26,21 +29,32 @@ var (
 )
 
 type Config struct {
-	Client *opsgenie.Client
+	Config *client.Config
 }
 
 type Alert struct {
-	client *opsgenie.Client
+	Client *alert.Client
 }
 
 func New(config Config) (*Alert, error) {
-	if config.Client == nil {
+	if config.Config == nil {
 		// TODO: Error.
 	}
+	/*
+		opsgenieConfig := client.Config{
+			ApiKey: *opsgenieAPIKey,
+		}
 
-	a := &Alert{
-		client: config.Client,
+		opsGenieConfig := &client.Config{
+			ApiKey: Config{},
+		}
+	*/
+
+	alertClient, err := alert.NewClient(config.Config)
+	if err != nil {
+		return nil, microerror.Mask(err)
 	}
+	a := &Alert{Client: alertClient}
 
 	return a, nil
 }
@@ -49,7 +63,11 @@ func (a *Alert) Collect(ch chan<- prometheus.Metric) error {
 	var g errgroup.Group
 
 	g.Go(func() error {
-		numAlerts, err := a.client.CountAlerts()
+		alertRequest := alert.CountAlertsRequest{
+			Query: "",
+		}
+
+		numAlerts, err := a.client.CountAlerts(context.Background(), &alertRequest)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -57,7 +75,7 @@ func (a *Alert) Collect(ch chan<- prometheus.Metric) error {
 		ch <- prometheus.MustNewConstMetric(
 			alertCount,
 			prometheus.GaugeValue,
-			float64(numAlerts),
+			float64(numAlerts.Count),
 			"",
 		)
 
@@ -65,15 +83,25 @@ func (a *Alert) Collect(ch chan<- prometheus.Metric) error {
 	})
 
 	g.Go(func() error {
-		numOpenAlerts, err := a.client.CountOpenAlerts()
+		alertRequest := alert.CountAlertsRequest{
+			Query: "status:open",
+		}
+
+		numAlerts, err := a.client.CountAlerts(context.Background(), &alertRequest)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		//numOpenAlerts, err := a.client.CountOpenAlerts()
 		if err != nil {
 			return microerror.Mask(err)
 		}
 
+		fmt.Println(numAlerts.Count)
+
 		ch <- prometheus.MustNewConstMetric(
 			alertCount,
 			prometheus.GaugeValue,
-			float64(numOpenAlerts),
+			float64(numAlerts.Count),
 			"open",
 		)
 
@@ -81,7 +109,20 @@ func (a *Alert) Collect(ch chan<- prometheus.Metric) error {
 	})
 
 	g.Go(func() error {
-		numClosedAlerts, err := a.client.CountClosedAlerts()
+		alertRequest := alert.CountAlertsRequest{
+			Query: "status:closed",
+		}
+
+		numAlerts, err := a.client.CountAlerts(context.Background(), &alertRequest)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		if err != nil {
+			return microerror.Mask(err)
+		}
+
+		fmt.Println(numAlerts.Count)
+
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -89,7 +130,7 @@ func (a *Alert) Collect(ch chan<- prometheus.Metric) error {
 		ch <- prometheus.MustNewConstMetric(
 			alertCount,
 			prometheus.GaugeValue,
-			float64(numClosedAlerts),
+			float64(numAlerts.Count),
 			"closed",
 		)
 
